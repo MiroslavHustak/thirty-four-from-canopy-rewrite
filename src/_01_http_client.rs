@@ -12,7 +12,9 @@ pub struct ResponsePut {
 
 pub async fn put_to_rest_api() -> Result<ResponsePut, Box<dyn std::error::Error>> {
     let url = "https://rust-rest-api-endpoints.onrender.com/api/canopy";
-    let api_key = "test747646s5d4fvasfd645654asgasga654a6g13a2fg465a4fg4a3";
+
+    dotenvy::dotenv().ok();
+    let api_key = std::env::var("API_KEY")?;
 
     // Read strongly-typed payload
     let payload: LinksPayload =

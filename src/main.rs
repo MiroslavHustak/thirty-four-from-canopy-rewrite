@@ -28,7 +28,8 @@ fn filter_old_links(mut payload: LinksPayload) -> LinksPayload {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {  
+
     let payload = mock_canopy_results();
     let filtered = filter_old_links(payload);
 
