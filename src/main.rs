@@ -1,10 +1,4 @@
-mod _02_serialization;
-mod _01_http_client;
-
-use std::fs;
-use _02_serialization::{LinksPayload, serialize_to_json};
-use _01_http_client::put_to_rest_api;
-
+/*
 // Mock canopy results
 fn mock_canopy_results() -> LinksPayload {
     LinksPayload {
@@ -15,30 +9,69 @@ fn mock_canopy_results() -> LinksPayload {
         ],
     }
 }
+*/
 
-// Filter logic
-fn filter_old_links(mut payload: LinksPayload) -> LinksPayload {
+//chromedriver.exe --port=9515
+
+mod _01_http_client;
+mod _02_serialization;
+mod _03_scraping_edge;
+mod _04_scraping_chrome;
+
+use std::fs;
+
+use _01_http_client::put_to_rest_api;
+use _02_serialization::serialize_to_json;
+use _03_scraping_edge::scrape_real_results_edge;
+use _04_scraping_chrome::scrape_real_results_chrome;
+
+// Filter logic (same as you had)
+fn filter_old_links(mut payload: crate::_02_serialization::LinksPayload) -> crate::_02_serialization::LinksPayload {
     payload.list = payload
         .list
         .into_iter()
         .filter(|link| !link.contains("2022") && !link.contains("2023"))
         .collect();
-
     payload
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {  
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Starting Scraper...");
 
-    let payload = mock_canopy_results();
+    // 1. Scrape (using Chrome instead of Edge)
+    let payload = match scrape_real_results_chrome().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Scraping failed: {}. Is chromedriver running on port 9515?", e);
+            return Ok(());
+        }
+    };
+/*
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Starting Scraper...");
+
+    // 1. Scrape (Replaces the Mock)
+    let payload = match scrape_real_results_chrome().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Scraping failed: {}. Is msedgedriver running?", e);
+            return Ok(());
+        }
+    };
+
+ */
+
+    // 2. Filter
     let filtered = filter_old_links(payload);
 
+    // 3. Save
     fs::create_dir_all("CanopyResults")?;
-
     serialize_to_json(&filtered, "CanopyResults/canopy_results.json")?;
 
+    // 4. Send to API
+    println!("Sending to API...");
     let response = put_to_rest_api().await?;
-
     println!("Response: {} - {}", response.message1, response.message2);
 
     Ok(())
