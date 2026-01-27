@@ -24,3 +24,6 @@ pub fn deserialize_from_json(
     let payload: LinksPayload = serde_json::from_str(&content)?;
     Ok(payload)
 }
+
+//    cd c:\temp\driver
+//    chromedriver.exe --port=9515

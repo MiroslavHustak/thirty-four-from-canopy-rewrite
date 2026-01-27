@@ -19,6 +19,8 @@ mod _03_scraping_edge;
 mod _04_scraping_chrome;
 
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH, Instant, Duration};
+use chrono::{DateTime, Local, Utc};
 
 use _01_http_client::put_to_rest_api;
 use _02_serialization::serialize_to_json;
@@ -35,9 +37,26 @@ fn filter_old_links(mut payload: crate::_02_serialization::LinksPayload) -> crat
     payload
 }
 
+fn format_duration(duration: Duration) -> String {
+    let total_seconds = duration.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+    let millis = duration.subsec_millis();
+
+    if hours > 0 {
+        format!("{}h {}m {}s", hours, minutes, seconds)
+    } else if minutes > 0 {
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        format!("{}.{:03}s", seconds, millis)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting Scraper...");
+    let start = Instant::now();
 
     // 1. Scrape (using Chrome instead of Edge)
     let payload = match scrape_real_results_chrome().await {
@@ -73,6 +92,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sending to API...");
     let response = put_to_rest_api().await?;
     println!("Response: {} - {}", response.message1, response.message2);
+
+    let elapsed = start.elapsed();
+    println!("Took: {}", format_duration(elapsed));
 
     Ok(())
 }
