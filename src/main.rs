@@ -1,22 +1,11 @@
-/*
-// Mock canopy results
-fn mock_canopy_results() -> LinksPayload {
-    LinksPayload {
-        list: vec![
-            "https://kodis-files.s3.eu-central-1.amazonaws.com/288_2025_12_14_2026_12_12_211a7a5d18.pdf".to_string(),
-            "https://kodis-files.s3.eu-central-1.amazonaws.com/293_2025_12_14_2026_12_12_eb56d8fc05.pdf".to_string(),
-            "https://kodis-files.s3.eu-central-1.amazonaws.com/901_2025_12_14_2026_12_12_c98921935e.pdf".to_string(),
-        ],
-    }
-}
-*/
-
+//cd c:/temp
 //chromedriver.exe --port=9515
 
 mod _01_http_client;
 mod _02_serialization;
 mod _03_scraping_edge;
 mod _04_scraping_chrome;
+mod _05_links;
 
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH, Instant, Duration};
@@ -44,12 +33,10 @@ fn format_duration(duration: Duration) -> String {
     let seconds = total_seconds % 60;
     let millis = duration.subsec_millis();
 
-    if hours > 0 {
-        format!("{}h {}m {}s", hours, minutes, seconds)
-    } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
-    } else {
-        format!("{}.{:03}s", seconds, millis)
+    match (hours, minutes) {
+        (h, m, ..) if h > 0 => format!("{}h {}m {}s", h, m, seconds),
+        (_, m, ..) if m > 0 => format!("{}m {}s", m, seconds),
+        _ => format!("{}.{:03}s", seconds, millis),
     }
 }
 

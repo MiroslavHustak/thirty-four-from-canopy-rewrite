@@ -2,6 +2,11 @@ use thirtyfour::prelude::*;
 use serde_json::json;
 use std::time::Duration;
 use crate::_02_serialization::LinksPayload;
+use crate::_05_links::{MAIN_URLS, CHANGES_BASE_URL, get_change_ids, get_main_urls_owned};
+
+use futures::stream::{self, StreamExt};
+use thirtyfour::By;
+use futures::future::join_all;
 
 pub async fn scrape_real_results_edge() -> Result<LinksPayload, Box<dyn std::error::Error>> {
     let mut all_links = Vec::new();
@@ -44,50 +49,61 @@ pub async fn scrape_real_results_edge() -> Result<LinksPayload, Box<dyn std::err
 // Matches F# changesLinks()
 async fn scrape_changes_links() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let driver = start_edge_driver().await?;
-    let mut all_links = Vec::new();
 
-    let changes_base = "https://www.kodis.cz/changes/";
-    let change_ids: Vec<i32> = std::iter::once(2115).chain(2400..2800).collect();
+    let all_links = stream::iter(get_change_ids())
+        .then(|id| {
+            let driver = &driver;
+            async move {
+                let url = format!("{}{}", CHANGES_BASE_URL, id);
 
-    for id in change_ids {
-        let url = format!("{}{}", changes_base, id);
+                match driver.goto(&url).await {
+                    Ok(_) => {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
 
-        match driver.goto(&url).await {
-            Ok(_) => {
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                        let links_appeared = stream::iter(0..20)
+                            .then(|_| async {
+                                match driver.find_all(By::Css("ul > li > div")).await {
+                                    Ok(elements) if !elements.is_empty() => true,
+                                    _ => {
+                                        tokio::time::sleep(Duration::from_millis(250)).await;
+                                        false
+                                    }
+                                }
+                            })
+                            .any(|found| futures::future::ready(found))
+                            .await;
 
-                // Wait for links to appear (with timeout)
-                let mut links_appeared = false;
-                for _ in 0..20 { // 5 second timeout (20 * 250ms)
-                    if let Ok(elements) = driver.find_all(By::Css("ul > li > div")).await {
-                        if elements.len() >= 1 {
-                            links_appeared = true;
-                            break;
+                        match links_appeared {
+                            true => match extract_pdf_links(driver).await {
+                                Ok(links) => Some(
+                                    links
+                                        .into_iter()
+                                        .filter(|l| {
+                                            l.contains("kodis-files.s3.eu-central-1.amazonaws.com/")
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                                Err(_) => None,
+                            },
+                            false => None,
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(250)).await;
-                }
-
-                if links_appeared {
-                    if let Ok(links) = extract_pdf_links(&driver).await {
-                        let filtered: Vec<String> = links.into_iter()
-                            .filter(|link| link.contains("kodis-files.s3.eu-central-1.amazonaws.com/"))
-                            .collect();
-                        all_links.extend(filtered);
-                    }
+                    Err(_) => None,
                 }
             }
-            Err(_) => continue,
-        }
-    }
+        })
+        .filter_map(|x| async { x })
+        .flat_map(stream::iter)
+        .filter(|link| {
+            let keep = !link.contains("2022") && !link.contains("2023");
+            futures::future::ready(keep)
+        })
+        .collect::<Vec<_>>()
+        .await;
 
     driver.quit().await?;
 
-    let filtered: Vec<String> = all_links.into_iter()
-        .filter(|item| !item.contains("2022") && !item.contains("2023"))
-        .collect();
-
-    Ok(filtered)
+    Ok(all_links)
 }
 
 // Matches F# currentAndFutureLinks()
@@ -95,36 +111,7 @@ async fn scrape_current_and_future_links() -> Result<Vec<String>, Box<dyn std::e
     let driver = start_edge_driver().await?;
     let mut all_links = Vec::new();
 
-    let urls = vec![
-        "https://www.kodis.cz/lines/city?tab=MHD+Ostrava",
-        "https://www.kodis.cz/lines/region?tab=75",
-        "https://www.kodis.cz/lines/city?tab=MHD+Opava",
-        "https://www.kodis.cz/lines/region?tab=232-293",
-        "https://www.kodis.cz/lines/city?tab=MHD+Frýdek-Místek",
-        "https://www.kodis.cz/lines/region?tab=331-392",
-        "https://www.kodis.cz/lines/city?tab=MHD+Havířov",
-        "https://www.kodis.cz/lines/region?tab=440-465",
-        "https://www.kodis.cz/lines/city?tab=MHD+Karviná",
-        "https://www.kodis.cz/lines/city?tab=MHD+Orlová",
-        "https://www.kodis.cz/lines/region?tab=531-583",
-        "https://www.kodis.cz/lines/city?tab=MHD+Nový+Jičín",
-        "https://www.kodis.cz/lines/city?tab=MHD+Studénka",
-        "https://www.kodis.cz/lines/region?tab=613-699",
-        "https://www.kodis.cz/lines/city?tab=MHD+Třinec",
-        "https://www.kodis.cz/lines/city?tab=MHD+Český+Těšín",
-        "https://www.kodis.cz/lines/region?tab=731-788",
-        "https://www.kodis.cz/lines/city?tab=MHD+Krnov",
-        "https://www.kodis.cz/lines/city?tab=MHD+Bruntál",
-        "https://www.kodis.cz/lines/region?tab=811-885",
-        "https://www.kodis.cz/lines/region?tab=901-990",
-        "https://www.kodis.cz/lines/train?tab=S1-S34",
-        "https://www.kodis.cz/lines/train?tab=R8-R62",
-        "https://www.kodis.cz/lines/city?tab=NAD+MHD",
-        "https://www.kodis.cz/lines/region?tab=NAD",
-        "https://www.kodis.cz/lines/boat?tab=Lodní+doprava",
-    ];
-
-    for url in urls {
+    for url in MAIN_URLS {
         match scrape_url_current_and_future(&driver, url).await {
             Ok(links) => {
                 println!("✓ {}: {} links", url, links.len());
@@ -149,199 +136,206 @@ async fn scrape_current_and_future_links() -> Result<Vec<String>, Box<dyn std::e
 // Matches F# currentLinks()
 async fn scrape_current_links() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let driver = start_edge_driver().await?;
-    let mut all_links = Vec::new();
 
-    let urls = vec![
-        "https://www.kodis.cz/lines/city?tab=MHD+Ostrava",
-        "https://www.kodis.cz/lines/region?tab=75",
-        "https://www.kodis.cz/lines/city?tab=MHD+Opava",
-        "https://www.kodis.cz/lines/region?tab=232-293",
-        "https://www.kodis.cz/lines/city?tab=MHD+Frýdek-Místek",
-        "https://www.kodis.cz/lines/region?tab=331-392",
-        "https://www.kodis.cz/lines/city?tab=MHD+Havířov",
-        "https://www.kodis.cz/lines/region?tab=440-465",
-        "https://www.kodis.cz/lines/city?tab=MHD+Karviná",
-        "https://www.kodis.cz/lines/city?tab=MHD+Orlová",
-        "https://www.kodis.cz/lines/region?tab=531-583",
-        "https://www.kodis.cz/lines/city?tab=MHD+Nový+Jičín",
-        "https://www.kodis.cz/lines/city?tab=MHD+Studénka",
-        "https://www.kodis.cz/lines/region?tab=613-699",
-        "https://www.kodis.cz/lines/city?tab=MHD+Třinec",
-        "https://www.kodis.cz/lines/city?tab=MHD+Český+Těšín",
-        "https://www.kodis.cz/lines/region?tab=731-788",
-        "https://www.kodis.cz/lines/city?tab=MHD+Krnov",
-        "https://www.kodis.cz/lines/city?tab=MHD+Bruntál",
-        "https://www.kodis.cz/lines/region?tab=811-885",
-        "https://www.kodis.cz/lines/region?tab=901-990",
-        "https://www.kodis.cz/lines/train?tab=S1-S34",
-        "https://www.kodis.cz/lines/train?tab=R8-R62",
-        "https://www.kodis.cz/lines/city?tab=NAD+MHD",
-        "https://www.kodis.cz/lines/region?tab=NAD",
-        "https://www.kodis.cz/lines/boat?tab=Lodní+doprava",
-    ];
-
-    for url in urls {
-        match scrape_url_current_only(&driver, url).await {
-            Ok(links) => {
-                println!("✓ {}: {} links", url, links.len());
-                all_links.extend(links);
+    let all_links = stream::iter(MAIN_URLS)
+        .then(|url| {
+            let driver = &driver;
+            async move {
+                match scrape_url_current_only(driver, url).await {
+                    Ok(links) => {
+                        println!("✓ {}: {} links", url, links.len());
+                        Some(links)
+                    }
+                    Err(e) => {
+                        eprintln!("Na tomto odkazu to opravdu nezvládl: {}", url);
+                        None
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("Na tomto odkazu to opravdu nezvládl: {}", url);
-            }
-        }
-    }
+        })
+        .filter_map(|x| async { x })
+        .flat_map(stream::iter)
+        .filter(|link| {
+            let keep = !link.contains("2022") && !link.contains("2023");
+            futures::future::ready(keep)
+        })
+        .collect::<Vec<_>>()
+        .await;
 
     driver.quit().await?;
 
-    let filtered: Vec<String> = all_links.into_iter()
-        .filter(|item| !item.contains("2022") && !item.contains("2023"))
-        .collect();
-
-    Ok(filtered)
+    Ok(all_links)
 }
 
 // Helper function to scrape a URL with current AND future timetables
-async fn scrape_url_current_and_future(driver: &WebDriver, url: &str) -> WebDriverResult<Vec<String>> {
+async fn scrape_url_current_and_future(
+    driver: &WebDriver,
+    url: &str,
+) -> Result<Vec<String>, WebDriverError> {
     driver.goto(url).await?;
 
-    let mut all_page_links = Vec::new();
+    let first_page = scrape_with_future_buttons(driver).await?;
 
-    // First pass - click all future buttons
-    let pdf_link_list_1 = scrape_with_future_buttons(driver).await?;
-    all_page_links.extend(pdf_link_list_1);
+    let paginated = stream::unfold((), |_| async {
+        match check_next_button_clickable(driver).await {
+            false => None,
+            true => match driver.find(By::LinkText("Další")).await {
+                Ok(btn) => {
+                    let _ = btn.click().await;
+                    tokio::time::sleep(Duration::from_millis(2_000)).await;
 
-    // Paginate through "Další" buttons
-    loop {
-        if !check_next_button_clickable(driver).await {
-            break;
+                    match scrape_with_future_buttons(driver).await {
+                        Ok(links) => Some((links, ())),
+                        Err(_) => None,
+                    }
+                }
+                Err(_) => None,
+            },
         }
+    })
+        .flat_map(stream::iter)
+        .collect::<Vec<_>>()
+        .await;
 
-        match driver.find(By::LinkText("Další")).await {
-            Ok(btn) => {
-                let _ = btn.click().await;
-                tokio::time::sleep(Duration::from_millis(2000)).await;
-
-                let links = scrape_with_future_buttons(driver).await?;
-                all_page_links.extend(links);
-            }
-            Err(_) => break,
-        }
-    }
-
-    Ok(all_page_links)
+    Ok(first_page.into_iter().chain(paginated).collect())
 }
 
 // Helper function to scrape a URL with ONLY current timetables
-async fn scrape_url_current_only(driver: &WebDriver, url: &str) -> WebDriverResult<Vec<String>> {
+async fn scrape_url_current_only(
+    driver: &WebDriver,
+    url: &str,
+) -> Result<Vec<String>, WebDriverError> {
     driver.goto(url).await?;
 
-    let mut all_page_links = Vec::new();
+    let first_page = scrape_current_page(driver).await?;
 
-    // First pass - no future buttons
-    let pdf_link_list_1 = scrape_current_page(driver).await?;
-    all_page_links.extend(pdf_link_list_1);
+    let paginated = stream::unfold((), |_| async {
+        match check_next_button_clickable(driver).await {
+            false => None,
+            true => match driver.find(By::LinkText("Další")).await {
+                Ok(btn) => {
+                    let _ = btn.click().await;
+                    tokio::time::sleep(Duration::from_millis(2_000)).await;
 
-    // Paginate through "Další" buttons
-    loop {
-        if !check_next_button_clickable(driver).await {
-            break;
+                    match scrape_current_page(driver).await {
+                        Ok(links) => Some((links, ())),
+                        Err(_) => None,
+                    }
+                }
+                Err(_) => None,
+            },
         }
+    })
+        .flat_map(stream::iter)
+        .collect::<Vec<_>>()
+        .await;
 
-        match driver.find(By::LinkText("Další")).await {
-            Ok(btn) => {
-                let _ = btn.click().await;
-                tokio::time::sleep(Duration::from_millis(2000)).await;
-
-                let links = scrape_current_page(driver).await?;
-                all_page_links.extend(links);
-            }
-            Err(_) => break,
-        }
-    }
-
-    Ok(all_page_links)
+    Ok(first_page.into_iter().chain(paginated).collect())
 }
 
 // This matches the F# pdfLinkList() function with future buttons
-async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<String>> {
-    tokio::time::sleep(Duration::from_millis(15000)).await;
+use thirtyfour::{WebDriver};
+use thirtyfour::error::WebDriverError;
 
-    // Wait for links to show
-    let mut links_shown = false;
-    for _ in 0..100 {
-        if let Ok(elements) = driver.find_all(By::Css(".Card_actions__HhB_f")).await {
-            if elements.len() >= 1 {
-                links_shown = true;
-                break;
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+async fn scrape_with_future_buttons(
+    driver: &WebDriver,
+) -> Result<Vec<String>, WebDriverError> {
+    tokio::time::sleep(Duration::from_millis(15_000)).await;
 
-    if !links_shown {
-        return Ok(Vec::new());
-    }
-
-    let mut all_links = Vec::new();
-
-    // Get all "Budoucí jízdní řády" buttons
-    let buttons = driver.find_all(By::Css("button[title='Budoucí jízdní řády']")).await?;
-    let button_count = buttons.len();
-
-    for (i, button) in buttons.into_iter().enumerate() {
-        // Click button to show future timetables
-        let _ = button.click().await;
-        tokio::time::sleep(Duration::from_millis(2000)).await;
-
-        // Extract links
-        if let Ok(links) = extract_pdf_links(driver).await {
-            all_links.extend(links);
-        }
-
-        // CRITICAL: For the last button, wait for popup and click again to reveal "Další"
-        if i == button_count - 1 {
-            // Wait for headlessui menu item popup
-            for _ in 0..20 {
-                if let Ok(_) = driver.find(By::Css("[id*='headlessui-menu-item']")).await {
-                    break;
+    let links_shown = stream::iter(0..100)
+        .then(|_| async {
+            match driver.find_all(By::Css(".Card_actions__HhB_f")).await {
+                Ok(elements) if !elements.is_empty() => true,
+                _ => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    false
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .any(|shown| futures::future::ready(shown))
+        .await;
+
+    match links_shown {
+        false => return Ok(Vec::new()),
+        true => {}
+    }
+
+    let buttons = driver
+        .find_all(By::Css("button[title='Budoucí jízdní řády']"))
+        .await?;
+
+    let last_index = buttons.len().saturating_sub(1);
+
+    let all_links = stream::iter(buttons.into_iter().enumerate())
+        .then(|(i, button)| async move {
+            let _ = button.click().await;
+            tokio::time::sleep(Duration::from_millis(2_000)).await;
+
+            let extracted = match extract_pdf_links(driver).await {
+                Ok(links) => links,
+                Err(_) => Vec::new(),
+            };
+
+            match i == last_index {
+                true => {
+                    let _ = stream::iter(0..20)
+                        .then(|_| async {
+                            match driver
+                                .find(By::Css("[id*='headlessui-menu-item']"))
+                                .await
+                            {
+                                Ok(_) => true,
+                                Err(_) => {
+                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                    false
+                                }
+                            }
+                        })
+                        .any(|found| futures::future::ready(found))
+                        .await;
+
+                    let _ = button.click().await;
+                    tokio::time::sleep(Duration::from_millis(2_000)).await;
+                }
+                false => {
+                    let _ = driver
+                        .execute("window.history.back();", vec![])
+                        .await;
+                }
             }
 
-            // Click last button again to close and reveal "Další"
-            let _ = button.click().await;
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-        } else {
-            // For non-last buttons, navigate back
-            let _ = driver.execute("window.history.back();", vec![]).await;
-        }
-    }
+            extracted
+        })
+        .flat_map(stream::iter)
+        .collect::<Vec<_>>()
+        .await;
 
     Ok(all_links)
 }
 
 // This matches the F# pdfLinkList() function without future buttons
-async fn scrape_current_page(driver: &WebDriver) -> WebDriverResult<Vec<String>> {
-    tokio::time::sleep(Duration::from_millis(15000)).await;
+async fn scrape_current_page(
+    driver: &WebDriver,
+) -> Result<Vec<String>, WebDriverError> {
+    tokio::time::sleep(Duration::from_millis(15_000)).await;
 
-    // Wait for links to show
-    let mut links_shown = false;
-    for _ in 0..100 {
-        if let Ok(elements) = driver.find_all(By::Css(".Card_actions__HhB_f")).await {
-            if elements.len() >= 1 {
-                links_shown = true;
-                break;
+    let links_shown = stream::iter(0..100)
+        .then(|_| async {
+            match driver.find_all(By::Css(".Card_actions__HhB_f")).await {
+                Ok(elements) if !elements.is_empty() => true,
+                _ => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    false
+                }
             }
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+        })
+        .any(|shown| futures::future::ready(shown))
+        .await;
 
-    if !links_shown {
-        return Ok(Vec::new());
+    match links_shown {
+        false => Ok(Vec::new()),
+        true => extract_pdf_links(driver).await,
     }
-
-    extract_pdf_links(driver).await
 }
 
 async fn check_next_button_clickable(driver: &WebDriver) -> bool {
@@ -354,19 +348,22 @@ async fn check_next_button_clickable(driver: &WebDriver) -> bool {
     }
 }
 
-async fn extract_pdf_links(driver: &WebDriver) -> WebDriverResult<Vec<String>> {
-    let mut results = Vec::new();
+async fn extract_pdf_links(
+    driver: &WebDriver,
+) -> Result<Vec<String>, WebDriverError> {
     let tags = driver.find_all(By::Tag("a")).await?;
 
-    for tag in tags {
-        if let Some(href) = tag.attr("href").await? {
-            if href.ends_with(".pdf") {
-                results.push(href);
+    let hrefs = join_all(
+        tags.into_iter().map(|tag| async move {
+            match tag.attr("href").await {
+                Ok(Some(href)) if href.ends_with(".pdf") => Some(href),
+                _ => None,
             }
-        }
-    }
+        }),
+    )
+        .await;
 
-    Ok(results)
+    Ok(hrefs.into_iter().flatten().collect())
 }
 
 async fn start_edge_driver() -> Result<WebDriver, Box<dyn std::error::Error>> {

@@ -25,5 +25,5 @@ pub fn deserialize_from_json(
     Ok(payload)
 }
 
-//    cd c:\temp\driver
+//    cd c:\temp\
 //    chromedriver.exe --port=9515
