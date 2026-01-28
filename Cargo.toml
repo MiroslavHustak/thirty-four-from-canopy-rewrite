@@ -17,29 +17,12 @@ tokio = { version = "1", features = ["full"] }
 # Browser automation - Selenium WebDriver client (like Canopy)
 thirtyfour = "0.31"
 
-# Alternative browser automation option (commented out - pick one)
-# fantoccini = "0.19"
-
-# Error handling helpers (makes Result types nicer)
-anyhow = "1.0"
-thiserror = "1.0"
-
-# For waiting/delays (like Thread.Sleep in your F# code)
-tokio-util = "0.7"
-
 # Optional: Better async utilities
 futures = "0.3"
 
-# Optional: For regex matching on URLs if needed
-regex = "1.10"
-
 # Optional: Logging (helpful for debugging scraping)
-log = "0.4"
-env_logger = "0.11"
 dotenvy = "0.15.7"
-chrono = "0.4.43"
-scopeguard = "1.2.0"
 
 [dev-dependencies]
 # For testing
-tokio-test = "0.4"
+# tokio-test = "0.4"
