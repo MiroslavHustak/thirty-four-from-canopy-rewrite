@@ -88,7 +88,7 @@ async fn scrape_changes_links() -> Result<Vec<String>, Box<dyn std::error::Error
         })
         .filter_map(|x| async { x })
         .flat_map(stream::iter)
-        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023")))
+        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023") && !link.contains("2024")))
         .collect::<Vec<_>>()
         .await;
 
@@ -118,7 +118,7 @@ async fn scrape_current_and_future_links() -> Result<Vec<String>, Box<dyn std::e
         })
         .filter_map(|x| async { x })
         .flat_map(stream::iter)
-        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023")))
+        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023") && !link.contains("2024")))
         .collect::<Vec<_>>()
         .await;
 
@@ -148,7 +148,7 @@ async fn scrape_current_links() -> Result<Vec<String>, Box<dyn std::error::Error
         })
         .filter_map(|x| async { x })
         .flat_map(stream::iter)
-        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023")))
+        .filter(|link| futures::future::ready(!link.contains("2022") && !link.contains("2023") && !link.contains("2024")))
         .collect::<Vec<_>>()
         .await;
 

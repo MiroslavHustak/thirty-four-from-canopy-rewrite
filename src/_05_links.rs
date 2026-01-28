@@ -1,5 +1,5 @@
-// Module containing all URLs used for scraping
-// This eliminates code duplication between Chrome and Edge scrapers
+//    cd c:\temp\
+//    chromedriver.exe --port=9515
 
 /// Main URLs for scraping current and future timetables
 pub const MAIN_URLS: &[&str] = &[

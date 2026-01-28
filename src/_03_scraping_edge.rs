@@ -95,7 +95,7 @@ async fn scrape_changes_links() -> Result<Vec<String>, Box<dyn std::error::Error
         .filter_map(|x| async { x })
         .flat_map(stream::iter)
         .filter(|link| {
-            let keep = !link.contains("2022") && !link.contains("2023");
+            let keep = !link.contains("2022") && !link.contains("2023") && !link.contains("2024");
             futures::future::ready(keep)
         })
         .collect::<Vec<_>>()
@@ -127,7 +127,7 @@ async fn scrape_current_and_future_links() -> Result<Vec<String>, Box<dyn std::e
     driver.quit().await?;
 
     let filtered: Vec<String> = all_links.into_iter()
-        .filter(|item| !item.contains("2022") && !item.contains("2023"))
+        .filter(|item| !item.contains("2022") && !item.contains("2023") && !item.contains("2024"))
         .collect();
 
     Ok(filtered)
@@ -156,7 +156,7 @@ async fn scrape_current_links() -> Result<Vec<String>, Box<dyn std::error::Error
         .filter_map(|x| async { x })
         .flat_map(stream::iter)
         .filter(|link| {
-            let keep = !link.contains("2022") && !link.contains("2023");
+            let keep = !link.contains("2022") && !link.contains("2023") && !link.contains("2024");
             futures::future::ready(keep)
         })
         .collect::<Vec<_>>()
