@@ -40,8 +40,10 @@ pub fn get_change_ids() -> Vec<i32> {
     std::iter::once(2115).chain(2400..2800).collect()
 }
 
+/*
 /// Helper function to get URLs as Vec<String> instead of &[&str]
 /// Some code might need owned Strings instead of string slices
 pub fn get_main_urls_owned() -> Vec<String> {
     MAIN_URLS.iter().map(|&s| s.to_string()).collect()
 }
+*/

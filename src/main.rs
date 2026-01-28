@@ -8,8 +8,7 @@ mod _04_scraping_chrome;
 mod _05_links;
 
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH, Instant, Duration};
-use chrono::{DateTime, Local, Utc};
+use std::time::{Instant, Duration};
 
 use _01_http_client::put_to_rest_api;
 use _02_serialization::serialize_to_json;

@@ -1465,6 +1465,7 @@ dependencies = [
  "log",
  "regex",
  "reqwest",
+ "scopeguard",
  "serde",
  "serde_json",
  "thirtyfour",

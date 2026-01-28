@@ -1,6 +1,6 @@
 use thirtyfour::prelude::*;
 use serde_json::json;
-use futures::stream::{self, StreamExt};
+//use futures::stream::{StreamExt};
 use std::time::Duration;
 use crate::_02_serialization::LinksPayload;
 use crate::_05_links::{MAIN_URLS, CHANGES_BASE_URL, get_change_ids};
@@ -116,7 +116,7 @@ async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<S
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
 
-        let mut extracted = extract_pdf_links(driver).await.unwrap_or_default();
+        let extracted = extract_pdf_links(driver).await.unwrap_or_default();
 
         if i == last_index {
             // mimic Canopy re-click menu button
