@@ -260,14 +260,14 @@ async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<S
         Duration::from_millis(400),
     ).await;
 
-    if !cards_shown {
-        return Ok(Vec::new());
-    }
+    match cards_shown {
+    false => return Ok(Vec::new()),
+    true => {} }
 
     let buttons = driver.find_all(By::Css("button[title='Budoucí jízdní řády']")).await?;
     let last_index = buttons.len().saturating_sub(1);
 
-    let mut all_links = Vec::new();
+     let mut all_links = Vec::new();  //v Rustu mutable, nova kopie jako v F# sice lze, ale neni to idiomaticke
 
     for (i, button) in buttons.into_iter().enumerate() {
         for attempt in 0..3 {
@@ -280,19 +280,53 @@ async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<S
 
         let extracted = extract_pdf_links(driver).await.unwrap_or_default();
 
-        if i == last_index {
-            if let Ok(menu_button) = driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
-                let _ = menu_button.click().await;
-                tokio::time::sleep(Duration::from_secs(3)).await;
+        match i == last_index {
+            true => {
+                match driver.find(By::Css("button[title='Budoucí jízdní řády']")).await.is_ok() {
+                    true => {
+                        let menu_button =
+                            driver.find(By::Css("button[title='Budoucí jízdní řády']")).await.unwrap();
+                        let _ = menu_button.click().await;
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                    }
+                    false => {
+                        // do nothing
+                    }
+                }
+                /*
+                match i == last_index {
+                    true => {
+                        match driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
+                            Ok(menu_button) => {
+                                let _ = menu_button.click().await;
+                                tokio::time::sleep(Duration::from_secs(3)).await;
+                            }
+                            Err(_) => {
+                                // do nothing
+                            }
+                        }
+                    }
+                    false => {
+                        // do nothing
+                    }
+                }
+
+                if let Ok(menu_button) =
+                    driver.find(By::Css("button[title='Budoucí jízdní řády']")).await
+                {
+                    let _ = menu_button.click().await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                }
+                */
             }
-        } else {
-            if let Ok(menu_button) = driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
-                let _ = menu_button.click().await;
-                tokio::time::sleep(Duration::from_secs(3)).await;
+            false => {
+                // do nothing
             }
         }
 
         all_links.extend(extracted);
+        //all_links @ extracted
+        //Seq.fold (fun acc x -> acc @ x) [] sequences
     }
 
     Ok(all_links)
@@ -321,8 +355,44 @@ async fn scrape_url_current_and_future(
     url: &str,
 ) -> WebDriverResult<Vec<String>> {
     driver.goto(url).await?;
+    /*
+    In Rust, an async fn returns a Future, which is just a value that represents a computation that might not be done yet.
 
-    let mut all_links = scrape_with_future_buttons(driver).await?;
+    The executor (like tokio) repeatedly asks the future:
+    
+    “Are you done yet?”
+    
+    This asking is called polling.
+    
+    Each time the future is polled, it either:
+    
+    Returns Ready(value) → the computation is complete
+    
+    Returns Pending → the computation is not done, the executor should try again later
+    
+    So polling = repeatedly checking the future’s state until it finishes.
+    */
+
+    let mut all_links = scrape_with_future_buttons(driver).await?; //neco jako Async.Start |> Result.mapRust // await |> ?
+    /*
+    let mapRust res = //Ok je dole, tohle se v F# takto nerobi, neb se to nezkompiluje
+    match res with
+    | Ok value -> value
+    | Error err -> Error err
+    
+    match x {
+        Ok(v) => v,              // Vec<String>
+        Err(e) => return Err(e),  // type ! ("never")
+    };
+    
+    Rust and F# both require “all branches must have the same type”, but what “type” means is slightly different because Rust has a never type (!).
+    
+    Rust mental model
+    match expr {
+        produce_value_type => "produces Vec<String>"
+        never_returns    => "type !, can act as Vec<String> here"
+    }
+    */
 
     loop {
         let next_clickable = match driver.find(By::LinkText("Další")).await {
@@ -401,8 +471,8 @@ pub async fn scrape_real_results_chrome() -> Result<LinksPayload, Box<dyn std::e
 
     let _ = driver.quit().await;
 
-    all_links.sort();
-    all_links.dedup();
+    all_links.sort(); //Array.sort
+    all_links.dedup(); //Array.distinct  //delete duplicates
 
     println!("=== Total unique links: {} ===", all_links.len());
 
@@ -473,3 +543,42 @@ F#’s Seq ≈ Rust’s Iterator.
 F#’s List / Array ≈ Rust’s Vec<T> / [T; N].
 
 Everything else (map, filter, flat_map) is just pipeline building and is lazy in Rust, unlike F# where you have to explicitly choose Seq for laziness.
+
+
+Non-iterators:
+
+F# Function / Module          | Rust Method / Exists On                           | What it Does / Notes
+------------------------------|---------------------------------------------------|-----------------------------------------------
+List.length / Array.length    | .len() (Vec, slice, array)                        | Returns number of elements
+List.isEmpty                  | .is_empty() (Vec, slice)                          | Returns true if empty
+List.head / Array.head        | .first() (Vec, slice)                             | Returns Option<&T>; panics if using [0] on empty Vec
+List.tail                     | &vec[1..] slice                                   | Returns slice without first element
+List.append a b               | .extend(b) (Vec) or [a, b].concat()              | Adds elements of b to a (mutable); concat creates new Vec
+List.rev                      | .into_iter().rev().collect() or .reverse()       | .reverse() is in-place (mutable); .rev() for iterator
+List.insert i x list          | .insert(index, value) (Vec)                      | Inserts element at index; shifts others right
+List.remove i list            | .remove(index) (Vec)                             | Removes element at index; returns it; shifts others left
+List.item i                   | [i] / .get(i) (Vec, slice)                       | [i] panics if out of bounds; .get(i) returns Option<&T>
+List.tryHead                  | .first() (Vec, slice)                            | Returns Option<&T>
+List.tryLast                  | .last() (Vec, slice)                             | Returns Option<&T>
+List.take n                   | &vec[..n] or .iter().take(n)                     | .truncate(n) modifies in place; slicing/iterator is non-destructive
+List.skip n                   | &vec[n..] or .iter().skip(n)                     | .split_off(n) splits Vec; slicing/iterator is non-destructive
+List.findIndex pred           | .iter().position(|x| pred(x))                    | Returns Option<usize>
+List.contains x               | .contains(&x) (Vec, slice)                       | Returns true if element exists
+List.copy / Array.copy        | .clone() / .to_vec()                             | Deep copy (clone) of Vec; .to_vec() for slices
+Array.clear                   | .clear() (Vec)                                   | Removes all elements in place
+List.append [x] (at end)      | .push(x) (Vec)                                   | Add element at end
+N/A (mutable operation)       | .pop() (Vec)                                     | Remove last element; returns Option<T>
+Array.set arr i x             | vec[i] = x                                       | Mutable assignment; panics if out of bounds
+List.sort                     | .sort() (Vec)                                    | Sort in place; requires T: Ord
+List.sortBy f                 | .sort_by_key(|x| f(x)) or .sort_by()            | Sort using key function or comparator
+List.sortDescending           | .sort_by(|a,b| b.cmp(a))                        | Reverse order sort
+List.max / List.min           | .iter().max() / .iter().min()                   | Returns Option<&T>; requires T: Ord
+List.fold f init              | .iter().fold(init, |acc, x| f(acc, x))          | Left fold accumulator
+List.iter f                   | .iter().for_each(|x| f(x))                      | Apply function to each element for side effects
+List.tryFind pred             | .iter().find(|x| pred(*x))                      | Returns Option<&T>
+List.partition pred           | .into_iter().partition(|x| pred(x))             | Returns (Vec<T>, Vec<T>); consumes original
+List.splitAt n                | .split_at(n) (slice)                            | Returns (&[T], &[T]) tuple of slices
+List.zip a b                  | a.iter().zip(b).collect::<Vec<_>>()             | Pairs elements; stops at shorter length
+List.unzip                    | .iter().cloned().unzip() or .into_iter().unzip()| Splits Vec<(A,B)> into (Vec<A>, Vec<B>)
+List.rev / Array.rev          | .reverse() or .iter().rev()                     | In-place (mutable) or iterator-based
+Array.blit src dst            | .copy_from_slice() (slice)                      | Copies slice data into another mutable slice

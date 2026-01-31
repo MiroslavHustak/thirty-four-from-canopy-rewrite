@@ -53,7 +53,7 @@ async fn extract_pdf_links(driver: &WebDriver) -> WebDriverResult<Vec<String>> {
             _ => None,
         }
     })).await;
-    Ok(hrefs.into_iter().flatten().collect())    
+    Ok(hrefs.into_iter().flatten().collect())
 }
 
 /// ===================== Scrape changes links =====================
@@ -96,14 +96,15 @@ async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<S
         Duration::from_millis(400),
     ).await;
 
-    if !cards_shown {
-        return Ok(Vec::new());
+    //Bang ! neni monadic bind :-), ale proste logical not
+    match cards_shown {
+        false => return Ok(Vec::new()),
+        true => {}
     }
-
     let buttons = driver.find_all(By::Css("button[title='Budoucí jízdní řády']")).await?;
     let last_index = buttons.len().saturating_sub(1);
 
-    let mut all_links = Vec::new();
+    let mut all_links = Vec::new();  //v Rustu mutable, nova kopie jako v F# sice lze, ale neni to idiomaticke
 
     for (i, button) in buttons.into_iter().enumerate() {
         for attempt in 0..3 {
@@ -116,19 +117,41 @@ async fn scrape_with_future_buttons(driver: &WebDriver) -> WebDriverResult<Vec<S
 
         let extracted = extract_pdf_links(driver).await.unwrap_or_default();
 
-        if i == last_index {
-            if let Ok(menu_button) = driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
-                let _ = menu_button.click().await;
-                tokio::time::sleep(Duration::from_secs(3)).await;
+        match i == last_index {
+            true => {
+                match i == last_index {
+                    true => {
+                        match driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
+                            Ok(menu_button) => {
+                                let _ = menu_button.click().await;
+                                tokio::time::sleep(Duration::from_secs(3)).await;
+                            }
+                            Err(_) => {
+                                // do nothing
+                            }
+                        }
+                    }
+                    false => {
+                        // do nothing
+                    }
+                }
+               /*
+               if let Ok(menu_button) =
+                   driver.find(By::Css("button[title='Budoucí jízdní řády']")).await
+               {
+                   let _ = menu_button.click().await;
+                   tokio::time::sleep(Duration::from_secs(3)).await;
+               }
+               */
             }
-        } else {
-            if let Ok(menu_button) = driver.find(By::Css("button[title='Budoucí jízdní řády']")).await {
-                let _ = menu_button.click().await;
-                tokio::time::sleep(Duration::from_secs(3)).await;
+            false => {
+                // do nothing
             }
         }
 
         all_links.extend(extracted);
+        //all_links @ extracted
+        //Seq.fold (fun acc x -> acc @ x) [] sequences
     }
 
     Ok(all_links)
@@ -178,7 +201,7 @@ async fn scrape_url_current_and_future(
                 Duration::from_secs(25),
                 Duration::from_millis(500),
             ).await;
-            all_links.extend(scrape_with_future_buttons(driver).await?);
+            all_links.extend(scrape_with_future_buttons(driver).await?); 
         }
     }
 
@@ -237,8 +260,8 @@ pub async fn scrape_real_results_chrome() -> Result<LinksPayload, Box<dyn std::e
 
     let _ = driver.quit().await;
 
-    all_links.sort();
-    all_links.dedup();
+    all_links.sort(); //Array.sort
+    all_links.dedup(); //Array.distinct  //delete duplicates
 
     println!("=== Total unique links: {} ===", all_links.len());
 
